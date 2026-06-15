@@ -1,0 +1,56 @@
+name: Daily Digest
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 */5 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e .
+      - name: Set Beijing target date
+        run: echo "TARGET_DATE=$(TZ=Asia/Shanghai date +%F)" >> "$GITHUB_ENV"
+      - name: Build digest
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            news-digest --target-date "$TARGET_DATE" --cache-ttl-minutes 0 --max-article-fetches 40 --translate --translation-max-items 80
+          else
+            news-digest --target-date "$TARGET_DATE" --cache-ttl-minutes 0 --max-article-fetches 40
+          fi
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

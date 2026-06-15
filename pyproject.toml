@@ -1,0 +1,21 @@
+[project]
+name = "newslens-daily-cn"
+version = "0.1.0"
+description = "A Chinese and Norway news tracking tool with source audit, topic filtering, and clickable daily reports."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+news-digest = "ai_builder_digest.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ai_builder_digest*"]
+exclude = ["data*", "site*", "tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
