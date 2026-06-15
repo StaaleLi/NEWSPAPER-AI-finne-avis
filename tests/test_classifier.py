@@ -233,6 +233,18 @@ def test_extract_date_from_xinhua_hyphenated_url() -> None:
     assert extract_date_from_url("http://www.news.cn/talking/2022-07/02/c_1128796615.htm") == "2022-07-02"
 
 
+def test_extract_date_from_compact_url() -> None:
+    assert extract_date_from_url("https://www.news.cn/politics/20260612/abc123/c.html") == "2026-06-12"
+
+
+def test_extract_date_from_full_hyphenated_url() -> None:
+    assert extract_date_from_url("https://example.com/news/2026-06-12/story.html") == "2026-06-12"
+
+
+def test_extract_date_returns_empty_for_no_match() -> None:
+    assert extract_date_from_url("https://example.com/news/no-date-here/story.html") == ""
+
+
 def test_huanqiu_hidden_parser_can_fall_back_to_anchor_parser() -> None:
     source = Source("示例源", "https://example.org/", "html", "国际时政")
     html = '<html><body><a href="https://example.org/news/20260610/story.html">国际政策新闻</a></body></html>'
