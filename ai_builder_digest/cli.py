@@ -12,9 +12,9 @@ from .fetchers import fetch_source, is_probable_news_link
 from .llm import llm_enrich_items, llm_translate_items
 from .logging_utils import configure_logging, get_logger
 from .models import DigestItem, Source, SourceAudit
-from .render import render_html
+from .render import render_archive, render_html
 from .sources import SOURCES
-from .storage import save_run
+from .storage import load_recent_items, save_run
 
 
 LOGGER = get_logger(__name__)
@@ -309,6 +309,19 @@ def main() -> None:
         article_cache_path.write_text(json.dumps(article_cache, ensure_ascii=False, indent=2), encoding="utf-8")
     if not args.no_db:
         save_run(args.db, target_date, items, audits)
+        weekly_items = load_recent_items(args.db, target_date, 7)
+        monthly_items = load_recent_items(args.db, target_date, 30)
+        weekly_path = site_path.parent / "weekly.html"
+        monthly_path = site_path.parent / "monthly.html"
+        weekly_path.write_text(
+            render_archive(weekly_items, "本周回顾（过去 7 天）", generated_at, target_date, 7),
+            encoding="utf-8",
+        )
+        monthly_path.write_text(
+            render_archive(monthly_items, "本月回顾（过去 30 天）", generated_at, target_date, 30),
+            encoding="utf-8",
+        )
+        LOGGER.info("Wrote weekly archive (%s items) and monthly archive (%s items)", len(weekly_items), len(monthly_items))
     LOGGER.info("Wrote %s items to %s, %s, and %s", len(items), site_path, json_path, audit_path)
 
 

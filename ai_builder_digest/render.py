@@ -50,13 +50,60 @@ def render_html(
 </head>
 <body>
   <header><div class="wrap"><div class="masthead"><div><div class="brand-line">Curated public-source briefing</div><h1>NewsLens Daily</h1><p class="subtitle">{lang_block("从参考消息、新华社、环球网、NRK、VG 等公开信源中筛选“中国时政/AI产业”和“挪威/NATO/EØS”相关内容。每条保留原文跳转、入选理由和来源提示。","Utvalgte saker fra Cankaoxiaoxi, Xinhua, Global Times, NRK og VG om kinesisk politikk, AI-industri og Norge/NATO/EØS. Hver sak beholder lenke til originalkilden, utvalgsgrunn og kildehint.","Selected items from Cankaoxiaoxi, Xinhua, Global Times, NRK, and VG on China politics, AI industry, and Norway/NATO/EØS. Each card keeps the original link, selection reason, and source note.")}</p></div><div class="date-stamp">今日审查<strong>{html.escape(target_date.strftime("%m.%d"))}</strong>{html.escape(target_date.isoformat())}</div></div><div class="meta"><span class="pill">生成时间：{html.escape(generated_at.strftime("%Y-%m-%d %H:%M"))}</span><span class="pill">审查日期：{html.escape(target_date.isoformat())}</span><span class="pill">命中：{len(items)} 条</span><span class="pill">中国时政：{len(politics)} 条</span><span class="pill">AI产业：{len(ai)} 条</span><span class="pill">挪威：{len(norway)} 条</span></div></div></header>
-  <main><div class="wrap"><div class="toolbar"><span><strong>{lang_inline("今日新闻摘要","Dagens nyhetsbrief","Daily briefing")}</strong>{lang_inline("优先展示符合主题且相关性更高的内容，点击标题可直接跳转原文。","Sakene er sortert etter tema og relevans. Klikk på tittelen for å åpne originalen.","Items are sorted by theme and relevance. Click a headline to open the original source.")}</span><div class="language-switcher" aria-label="Language"><button class="active" type="button" data-lang-button="zh" aria-pressed="true">中文</button><button type="button" data-lang-button="no" aria-pressed="false">Norsk</button><button type="button" data-lang-button="en" aria-pressed="false">English</button></div><a href="#source-audit">{lang_inline("查看来源审查","Se kildekontroll","View source audit")}</a></div>
+  <main><div class="wrap"><div class="toolbar"><span><strong>{lang_inline("今日新闻摘要","Dagens nyhetsbrief","Daily briefing")}</strong>{lang_inline("优先展示符合主题且相关性更高的内容，点击标题可直接跳转原文。","Sakene er sortert etter tema og relevans. Klikk på tittelen for å åpne originalen.","Items are sorted by theme and relevance. Click a headline to open the original source.")}</span><div class="language-switcher" aria-label="Language"><button class="active" type="button" data-lang-button="zh" aria-pressed="true">中文</button><button type="button" data-lang-button="no" aria-pressed="false">Norsk</button><button type="button" data-lang-button="en" aria-pressed="false">English</button></div><a href="weekly.html">{lang_inline("本周回顾","Ukens oversikt","Weekly")}</a><a href="monthly.html">{lang_inline("本月回顾","Månedens oversikt","Monthly")}</a><a href="#source-audit">{lang_inline("查看来源审查","Se kildekontroll","View source audit")}</a></div>
   <nav class="filter-bar">{filter_button("全部","all","全部","Alle","All",True)}{filter_button("国内时政","china-domestic","国内时政","Innenrikspolitikk","China domestic")}{filter_button("国际时政","international","国际时政","Internasjonal politikk","International")}{filter_button("AI产业","ai-industry","AI产业","AI-industri","AI industry")}{filter_button("挪威/NATO/EØS","norway-nato-eos","挪威/NATO/EØS","Norge/NATO/EØS","Norway/NATO/EØS")}{filter_button("评论","commentary","评论","Kommentar","Commentary")}</nav><div class="filter-empty" aria-live="polite">{lang_block("该分类今天没有命中内容。","Ingen saker i denne kategorien i dag.","No items matched this category today.")}</div>
   {render_section("中国国内 / 国际时政",politics,"今日重点政治、外交、国际关系与公共政策线索","没有命中中国时政内容；请查看审查区判断是否是源失败、日期不匹配或关键词过窄。")}
   {render_section("AI产业 / 科技政策",ai,"人工智能、芯片、算力、数据中心与科技监管动态","没有命中AI产业内容；请查看审查区判断是否是源失败或关键词过窄。")}
   {render_section("挪威 / NATO / EØS",norway,"VG / NRK 中的挪威公共事务、安全、经济与欧洲制度关系","没有命中挪威/NATO/EØS内容；请查看审查区判断是否是源失败或确实无相关项。")}
   {render_audit(audits)}</div></main>
   <script>(()=>{{const f=[...document.querySelectorAll(".filter-button")],l=[...document.querySelectorAll("[data-lang-button]")],s=[...document.querySelectorAll(".issue-section")],a=[...document.querySelectorAll("article[data-category]")],e=document.querySelector(".filter-empty"),m={{zh:"zh-CN",no:"nb-NO",en:"en"}};function F(slug,hash=true){{const b=f.find(x=>x.dataset.slug===slug)||f[0],cat=b.dataset.filter||"全部",all=cat==="全部";let n=0,first=null;a.forEach(x=>{{const v=all||x.dataset.category===cat;x.classList.toggle("is-hidden",!v);if(v)n++}});s.forEach(x=>{{const v=x.querySelectorAll("article[data-category]:not(.is-hidden)").length>0;x.classList.toggle("is-hidden",!v);if(v&&!first)first=x}});if(e)e.classList.toggle("is-visible",n===0);f.forEach(x=>{{const v=x===b;x.classList.toggle("active",v);x.setAttribute("aria-pressed",v?"true":"false")}});if(hash)history.replaceState(null,"",all?window.location.pathname+window.location.search:`#${{b.dataset.slug}}`);if(!all&&first)first.scrollIntoView({{behavior:"smooth",block:"start"}})}}function L(lang){{const next=m[lang]?lang:"zh";document.documentElement.dataset.lang=next;document.documentElement.lang=m[next];localStorage.setItem("newslens-language",next);l.forEach(x=>{{const v=x.dataset.langButton===next;x.classList.toggle("active",v);x.setAttribute("aria-pressed",v?"true":"false")}})}}f.forEach(b=>b.addEventListener("click",()=>F(b.dataset.slug)));l.forEach(b=>b.addEventListener("click",()=>L(b.dataset.langButton)));const h=decodeURIComponent((location.hash||"").replace(/^#/,"")).trim();if(h&&f.some(b=>b.dataset.slug===h))F(h,false);L(localStorage.getItem("newslens-language")||"zh")}})();</script>
+</body></html>"""
+
+
+def render_archive(
+    items_by_date: list[tuple[date, DigestItem]],
+    title: str,
+    generated_at: datetime,
+    end_date: date,
+    days: int,
+) -> str:
+    grouped: dict[date, list[DigestItem]] = {}
+    for item_date, item in items_by_date:
+        grouped.setdefault(item_date, []).append(item)
+    date_sections = "".join(
+        f'<section class="issue-section"><h2 class="section-title"><span>{html.escape(d.isoformat())}<span class="section-kicker">{html.escape(d.strftime("%A"))}</span></span><small>{len(grouped[d])} 条</small></h2><div class="story-river">{"".join(render_card(item) for item in grouped[d])}</div></section>'
+        for d in sorted(grouped, reverse=True)
+    )
+    empty = '<section class="empty">还没有历史数据；运行几天后这里会有内容。</section>' if not grouped else ""
+    return f"""<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)} · NewsLens</title>
+  <style>
+    :root{{--bg:#eef2f3;--paper:#fbfaf7;--panel:#fff;--ink:#111827;--text:#17202a;--muted:#667085;--border:#d7dde5;--accent:#0f766e;--soft:#e6f5f2;--warn:#9a3412;--good:#067647;--bad:#b42318;--shadow:0 18px 45px rgba(20,35,48,.08)}}
+    *{{box-sizing:border-box}} body{{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.55}}
+    header{{padding:28px 20px 22px;border-bottom:1px solid var(--border);background:linear-gradient(90deg,rgba(15,118,110,.10),rgba(183,121,31,.08)),var(--paper)}} .wrap{{max-width:1120px;margin:0 auto}}
+    .brand-line{{margin-bottom:10px;color:var(--accent);font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}
+    h1{{margin:0 0 8px;font-size:40px;line-height:1;color:var(--ink)}} .subtitle{{margin:0;color:#526173;max-width:820px;font-size:16px}}
+    .meta{{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;color:var(--muted);font-size:14px}} .pill{{border:1px solid var(--border);background:rgba(255,255,255,.82);border-radius:999px;padding:6px 12px}}
+    main{{padding:28px 20px 54px}} .toolbar{{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:22px;padding:14px 18px;border:1px solid var(--border);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);color:var(--muted);font-size:14px}} .toolbar a{{color:var(--accent);font-weight:700;text-decoration:none}}
+    .issue-section{{margin-top:24px;padding:22px;border:1px solid var(--border);border-radius:8px;background:var(--paper);box-shadow:var(--shadow)}}
+    .section-title{{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:end;margin:0 0 16px;padding-bottom:10px;border-bottom:3px double #aeb8c5;font-size:22px;color:var(--ink)}} .section-kicker{{color:var(--muted);font-size:13px;font-weight:500;display:block;margin-top:2px}} .section-title small{{color:var(--muted);font-size:13px}}
+    .story-river{{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}}
+    article{{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:15px;display:flex;flex-direction:column;gap:8px;box-shadow:0 10px 30px rgba(20,35,48,.06)}} article h2{{margin:0;font-size:17px;line-height:1.35}} article h2 a{{color:var(--text);text-decoration:none}} article h2 a:hover{{color:var(--accent);text-decoration:underline}}
+    .source{{display:flex;flex-wrap:wrap;align-items:center;gap:7px;color:var(--muted);font-size:13px}} .label{{display:block;color:var(--muted);font-size:12px;font-weight:700;margin-bottom:2px}} .source .label,h2 .label{{display:none}}
+    .summary,.analysis{{color:#344054;font-size:14px}} .analysis,.credibility,.claim-check,.judge-row,.reason{{display:none}}
+    .score{{display:inline-flex;border-radius:999px;background:#fff7ed;color:var(--warn);font-weight:800;padding:2px 8px}}
+    .tags{{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}} .tag{{background:#f3f6f7;color:#3d4b5c;border-radius:999px;padding:4px 9px;font-size:12px}}
+    .empty{{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px;box-shadow:var(--shadow);color:var(--muted)}}
+    .lang-text,.lang-block{{display:none}} html[data-lang=zh] .lang-zh.lang-text,html[data-lang=no] .lang-no.lang-text,html[data-lang=en] .lang-en.lang-text{{display:inline}} html[data-lang=zh] .lang-zh.lang-block,html[data-lang=no] .lang-no.lang-block,html[data-lang=en] .lang-en.lang-block{{display:block}}
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><div class="brand-line">NewsLens · Archive</div><h1>{html.escape(title)}</h1><p class="subtitle">按日期倒序展示历史入选条目；数据来自本地 SQLite 历史库。</p><div class="meta"><span class="pill">截止日期：{html.escape(end_date.isoformat())}</span><span class="pill">回看 {days} 天</span><span class="pill">总条数：{sum(len(v) for v in grouped.values())}</span><span class="pill">生成时间：{html.escape(generated_at.strftime("%Y-%m-%d %H:%M"))}</span></div></div></header>
+  <main><div class="wrap"><div class="toolbar"><a href="index.html">← 返回今日</a><a href="weekly.html">本周</a><a href="monthly.html">本月</a></div>{date_sections}{empty}</div></main>
 </body></html>"""
 
 

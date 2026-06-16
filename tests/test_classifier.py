@@ -1,5 +1,5 @@
 from ai_builder_digest.classifier import classify_item
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import sqlite3
 
@@ -14,7 +14,8 @@ from ai_builder_digest.fetchers import (
 )
 from ai_builder_digest.models import DigestItem
 from ai_builder_digest.models import Source
-from ai_builder_digest.storage import save_run
+from ai_builder_digest.render import render_archive
+from ai_builder_digest.storage import load_recent_items, save_run
 
 
 def test_classifies_ai_policy_item() -> None:
@@ -364,3 +365,45 @@ def test_substring_keyword_not_double_counted() -> None:
     assert result is not None
     assert "大模型" in result.ai_keywords
     assert "模型" not in result.ai_keywords
+
+
+def test_load_recent_items_returns_window_in_date_desc_order(tmp_path: Path) -> None:
+    db_path = tmp_path / "digest.sqlite"
+    for target, link in [
+        (date(2026, 6, 8), "a"),
+        (date(2026, 6, 10), "b"),
+        (date(2026, 6, 12), "c"),
+        (date(2026, 5, 20), "old"),
+    ]:
+        item = DigestItem(title=f"标题-{link}", link=f"https://example.com/{link}", source="测试", category="国内时政")
+        save_run(db_path, target, [item], [])
+
+    recent = load_recent_items(db_path, date(2026, 6, 12), days=7)
+
+    links = [item.link for _, item in recent]
+    assert "https://example.com/old" not in links
+    dates = [d for d, _ in recent]
+    assert dates == sorted(dates, reverse=True)
+    assert len(recent) == 3
+
+
+def test_load_recent_items_returns_empty_when_db_missing(tmp_path: Path) -> None:
+    assert load_recent_items(tmp_path / "missing.sqlite", date(2026, 6, 12), days=7) == []
+
+
+def test_render_archive_handles_empty_history() -> None:
+    html = render_archive([], "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
+    assert "本周回顾" in html
+    assert "还没有历史数据" in html
+
+
+def test_render_archive_groups_items_by_date() -> None:
+    items = [
+        (date(2026, 6, 12), DigestItem(title="今日新闻", link="https://example.com/today", source="测试", category="国内时政")),
+        (date(2026, 6, 10), DigestItem(title="两天前的新闻", link="https://example.com/older", source="测试", category="AI产业")),
+    ]
+    html = render_archive(items, "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
+    assert "2026-06-12" in html
+    assert "2026-06-10" in html
+    assert "今日新闻" in html
+    assert "两天前的新闻" in html
