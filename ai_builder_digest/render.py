@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from .models import DigestItem, SourceAudit
 
@@ -62,6 +62,7 @@ def render_html(
 
 def render_archive(
     items_by_date: list[tuple[date, DigestItem]],
+    previous_items: list[tuple[date, DigestItem]],
     title: str,
     generated_at: datetime,
     end_date: date,
@@ -75,6 +76,10 @@ def render_archive(
         for d in sorted(grouped, reverse=True)
     )
     empty = '<section class="empty">还没有历史数据；运行几天后这里会有内容。</section>' if not grouped else ""
+    current_items = [item for _, item in items_by_date]
+    prev_items = [item for _, item in previous_items]
+    top_stories = render_top_stories(current_items, days)
+    keyword_panel = render_keyword_trends(current_items, prev_items, days)
     return f"""<!doctype html>
 <html lang="zh-CN" data-lang="zh">
 <head>
@@ -98,13 +103,105 @@ def render_archive(
     .score{{display:inline-flex;border-radius:999px;background:#fff7ed;color:var(--warn);font-weight:800;padding:2px 8px}}
     .tags{{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}} .tag{{background:#f3f6f7;color:#3d4b5c;border-radius:999px;padding:4px 9px;font-size:12px}}
     .empty{{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:18px;box-shadow:var(--shadow);color:var(--muted)}}
+    .analysis-card{{margin-bottom:20px;padding:20px;border:1px solid var(--border);border-radius:8px;background:var(--panel);box-shadow:var(--shadow)}} .card-head{{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px}} .card-head strong{{color:var(--ink);font-size:18px}} .card-sub{{color:var(--muted);font-size:13px}}
+    .kw-table{{width:100%;border-collapse:collapse;font-size:14px}} .kw-table th{{text-align:left;padding:8px 6px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border)}} .kw-table td{{padding:8px 6px;border-bottom:1px solid #f1f4f7;vertical-align:middle}} .kw-name{{font-weight:600;color:var(--ink);width:25%}} .kw-bar-cell{{width:38%}} .kw-bar{{height:8px;background:#eef2f3;border-radius:4px;overflow:hidden}} .kw-bar-fill{{height:100%;background:linear-gradient(90deg,#0f766e,#14b8a6)}} .kw-count,.kw-prev{{width:10%;color:#344054;font-variant-numeric:tabular-nums}} .kw-delta{{width:17%;font-weight:700;font-variant-numeric:tabular-nums}} .delta-up{{color:var(--bad)}} .delta-down{{color:var(--good)}} .delta-new{{color:var(--accent)}} .delta-neutral{{color:var(--muted)}}
+    .top-stories{{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}} .top-story{{display:grid;grid-template-columns:32px 1fr;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:#fbfcfe}} .rank{{font-size:22px;font-weight:800;color:var(--accent);text-align:center;line-height:1}} .top-story-title{{display:block;color:var(--ink);text-decoration:none;font-weight:600;font-size:15px;line-height:1.4;margin-bottom:4px}} .top-story-title:hover{{color:var(--accent);text-decoration:underline}} .top-story-meta{{color:var(--muted);font-size:13px;margin-bottom:4px}} .top-story-kws{{color:#475569;font-size:12px}}
     .lang-text,.lang-block{{display:none}} html[data-lang=zh] .lang-zh.lang-text,html[data-lang=no] .lang-no.lang-text,html[data-lang=en] .lang-en.lang-text{{display:inline}} html[data-lang=zh] .lang-zh.lang-block,html[data-lang=no] .lang-no.lang-block,html[data-lang=en] .lang-en.lang-block{{display:block}}
   </style>
 </head>
 <body>
   <header><div class="wrap"><div class="brand-line">NewsLens · Archive</div><h1>{html.escape(title)}</h1><p class="subtitle">按日期倒序展示历史入选条目；数据来自本地 SQLite 历史库。</p><div class="meta"><span class="pill">截止日期：{html.escape(end_date.isoformat())}</span><span class="pill">回看 {days} 天</span><span class="pill">总条数：{sum(len(v) for v in grouped.values())}</span><span class="pill">生成时间：{html.escape(generated_at.strftime("%Y-%m-%d %H:%M"))}</span></div></div></header>
-  <main><div class="wrap"><div class="toolbar"><a href="index.html">← 返回今日</a><a href="weekly.html">本周</a><a href="monthly.html">本月</a></div>{date_sections}{empty}</div></main>
+  <main><div class="wrap"><div class="toolbar"><a href="index.html">← 返回今日</a><a href="weekly.html">本周</a><a href="monthly.html">本月</a></div>{keyword_panel}{top_stories}{date_sections}{empty}</div></main>
 </body></html>"""
+
+
+def render_keyword_trends(current: list[DigestItem], previous: list[DigestItem], days: int) -> str:
+    if not current:
+        return ""
+    current_counts = count_keywords(current)
+    previous_counts = count_keywords(previous)
+    top = sorted(current_counts.items(), key=lambda x: x[1], reverse=True)[:15]
+    if not top:
+        return ""
+    max_count = top[0][1]
+    rows = []
+    for keyword, count in top:
+        prev_count = previous_counts.get(keyword, 0)
+        delta_label, delta_class = format_delta(count, prev_count)
+        bar_width = (count / max_count) * 100
+        rows.append(
+            f'<tr>'
+            f'<td class="kw-name">{html.escape(keyword)}</td>'
+            f'<td class="kw-bar-cell"><div class="kw-bar"><div class="kw-bar-fill" style="width:{bar_width:.1f}%"></div></div></td>'
+            f'<td class="kw-count">{count}</td>'
+            f'<td class="kw-prev">{prev_count}</td>'
+            f'<td class="kw-delta {delta_class}">{delta_label}</td>'
+            f'</tr>'
+        )
+    has_prev = sum(previous_counts.values()) > 0
+    prev_note = f"对比前 {days} 天" if has_prev else "无前一周期数据可比"
+    return f'''<section class="analysis-card">
+  <div class="card-head"><strong>关键词热度排行</strong><span class="card-sub">本期出现频次 Top 15 · {html.escape(prev_note)}</span></div>
+  <table class="kw-table">
+    <thead><tr><th>关键词</th><th>热度</th><th>本期</th><th>前期</th><th>环比</th></tr></thead>
+    <tbody>{"".join(rows)}</tbody>
+  </table>
+</section>'''
+
+
+def count_keywords(items: list[DigestItem]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        for kw in list(item.ai_keywords) + list(item.policy_keywords):
+            if not kw:
+                continue
+            counts[kw] = counts.get(kw, 0) + 1
+    return counts
+
+
+def format_delta(current: int, previous: int) -> tuple[str, str]:
+    if previous == 0 and current == 0:
+        return "—", "delta-neutral"
+    if previous == 0:
+        return "新出现", "delta-new"
+    ratio = (current - previous) / previous
+    if abs(ratio) < 0.05:
+        return "持平", "delta-neutral"
+    sign = "+" if ratio > 0 else ""
+    cls = "delta-up" if ratio > 0 else "delta-down"
+    return f"{sign}{ratio * 100:.0f}%", cls
+
+
+def render_top_stories(items: list[DigestItem], days: int) -> str:
+    if not items:
+        return ""
+    by_link: dict[str, DigestItem] = {}
+    for item in items:
+        existing = by_link.get(item.link)
+        if existing is None or item.score > existing.score:
+            by_link[item.link] = item
+    ranked = sorted(by_link.values(), key=lambda x: (-x.score, x.title))[:10]
+    if not ranked:
+        return ""
+    rows = []
+    for rank, item in enumerate(ranked, 1):
+        kws = "、".join((item.ai_keywords + item.policy_keywords)[:4]) or "（无关键词记录）"
+        stream_label = "挪威/NATO/EØS" if item.stream == "norway-nato-eos" else item.category
+        title = item.chinese_title if item.stream == "norway-nato-eos" and item.chinese_title else item.title
+        published = f" · {html.escape(item.published)}" if item.published else ""
+        rows.append(
+            f'<li class="top-story">'
+            f'<span class="rank">{rank}</span>'
+            f'<div class="top-story-body">'
+            f'<a class="top-story-title" href="{html.escape(item.link)}" target="_blank" rel="noopener noreferrer">{html.escape(title)}</a>'
+            f'<div class="top-story-meta">{html.escape(item.source)} · {html.escape(stream_label)}{published} · <span class="score">score {item.score}</span></div>'
+            f'<div class="top-story-kws">{html.escape(kws)}</div>'
+            f'</div></li>'
+        )
+    return f'''<section class="analysis-card">
+  <div class="card-head"><strong>本期重点故事 Top 10</strong><span class="card-sub">按 score 排序 · 过去 {days} 天</span></div>
+  <ol class="top-stories">{"".join(rows)}</ol>
+</section>'''
 
 
 def filter_button(category: str, slug: str, zh: str, no: str, en: str, active: bool = False) -> str:
