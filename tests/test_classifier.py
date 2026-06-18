@@ -14,7 +14,13 @@ from ai_builder_digest.fetchers import (
 )
 from ai_builder_digest.models import DigestItem
 from ai_builder_digest.models import Source
-from ai_builder_digest.render import render_archive
+from ai_builder_digest.render import (
+    count_keywords,
+    format_delta,
+    render_archive,
+    render_keyword_trends,
+    render_top_stories,
+)
 from ai_builder_digest.storage import load_recent_items, save_run
 
 
@@ -392,7 +398,7 @@ def test_load_recent_items_returns_empty_when_db_missing(tmp_path: Path) -> None
 
 
 def test_render_archive_handles_empty_history() -> None:
-    html = render_archive([], "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
+    html = render_archive([], [], "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
     assert "本周回顾" in html
     assert "还没有历史数据" in html
 
@@ -402,8 +408,85 @@ def test_render_archive_groups_items_by_date() -> None:
         (date(2026, 6, 12), DigestItem(title="今日新闻", link="https://example.com/today", source="测试", category="国内时政")),
         (date(2026, 6, 10), DigestItem(title="两天前的新闻", link="https://example.com/older", source="测试", category="AI产业")),
     ]
-    html = render_archive(items, "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
+    html = render_archive(items, [], "本周回顾", datetime(2026, 6, 12, 9, 0), date(2026, 6, 12), 7)
     assert "2026-06-12" in html
     assert "2026-06-10" in html
     assert "今日新闻" in html
     assert "两天前的新闻" in html
+
+
+def test_count_keywords_combines_ai_and_policy() -> None:
+    a = DigestItem(title="A", link="a", source="s", category="AI产业")
+    a.ai_keywords = ["AI", "大模型"]
+    a.policy_keywords = ["监管"]
+    b = DigestItem(title="B", link="b", source="s", category="国内时政")
+    b.ai_keywords = ["AI"]
+    b.policy_keywords = ["监管", "政策"]
+
+    counts = count_keywords([a, b])
+
+    assert counts["AI"] == 2
+    assert counts["监管"] == 2
+    assert counts["大模型"] == 1
+    assert counts["政策"] == 1
+
+
+def test_format_delta_marks_new_keyword_when_no_previous() -> None:
+    label, cls = format_delta(5, 0)
+    assert label == "新出现"
+    assert cls == "delta-new"
+
+
+def test_format_delta_uses_neutral_for_small_change() -> None:
+    label, cls = format_delta(100, 102)
+    assert label == "持平"
+    assert cls == "delta-neutral"
+
+
+def test_format_delta_signs_increase_and_decrease() -> None:
+    up_label, up_cls = format_delta(150, 100)
+    down_label, down_cls = format_delta(50, 100)
+    assert up_label.startswith("+")
+    assert up_cls == "delta-up"
+    assert down_label.startswith("-")
+    assert down_cls == "delta-down"
+
+
+def test_render_keyword_trends_shows_top_keywords_with_delta() -> None:
+    current = []
+    for _ in range(3):
+        item = DigestItem(title="t", link="x", source="s", category="AI产业")
+        item.ai_keywords = ["AI", "大模型"]
+        current.append(item)
+    prev = []
+    for _ in range(2):
+        item = DigestItem(title="t", link="x", source="s", category="AI产业")
+        item.ai_keywords = ["AI"]
+        prev.append(item)
+
+    html_str = render_keyword_trends(current, prev, days=7)
+
+    assert "AI" in html_str
+    assert "大模型" in html_str
+    assert "关键词热度排行" in html_str
+
+
+def test_render_keyword_trends_returns_empty_for_empty_items() -> None:
+    assert render_keyword_trends([], [], days=7) == ""
+
+
+def test_render_top_stories_ranks_by_score_and_dedupes_links() -> None:
+    high = DigestItem(title="高分", link="https://a", source="s", category="国内时政", score=80)
+    mid = DigestItem(title="中分", link="https://b", source="s", category="AI产业", score=40)
+    duplicate_lower = DigestItem(title="高分旧版", link="https://a", source="s", category="国内时政", score=30)
+
+    html_str = render_top_stories([high, mid, duplicate_lower], days=30)
+
+    assert "高分" in html_str
+    assert "中分" in html_str
+    assert "高分旧版" not in html_str
+    assert html_str.index("高分") < html_str.index("中分")
+
+
+def test_render_top_stories_returns_empty_when_no_items() -> None:
+    assert render_top_stories([], days=30) == ""

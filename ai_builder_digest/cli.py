@@ -310,15 +310,17 @@ def main() -> None:
     if not args.no_db:
         save_run(args.db, target_date, items, audits)
         weekly_items = load_recent_items(args.db, target_date, 7)
+        weekly_prev = load_recent_items(args.db, target_date - timedelta(days=7), 7)
         monthly_items = load_recent_items(args.db, target_date, 30)
+        monthly_prev = load_recent_items(args.db, target_date - timedelta(days=30), 30)
         weekly_path = site_path.parent / "weekly.html"
         monthly_path = site_path.parent / "monthly.html"
         weekly_path.write_text(
-            render_archive(weekly_items, "本周回顾（过去 7 天）", generated_at, target_date, 7),
+            render_archive(weekly_items, weekly_prev, "本周回顾（过去 7 天）", generated_at, target_date, 7),
             encoding="utf-8",
         )
         monthly_path.write_text(
-            render_archive(monthly_items, "本月回顾（过去 30 天）", generated_at, target_date, 30),
+            render_archive(monthly_items, monthly_prev, "本月回顾（过去 30 天）", generated_at, target_date, 30),
             encoding="utf-8",
         )
         LOGGER.info("Wrote weekly archive (%s items) and monthly archive (%s items)", len(weekly_items), len(monthly_items))
