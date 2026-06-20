@@ -4,7 +4,7 @@ import re
 from datetime import date
 from email.utils import parsedate_to_datetime
 
-from .article import ArchivedArticleError, fetch_article_text
+from .article import ArticleTextResult, ArchivedArticleError, fetch_article_result
 from .models import DigestItem
 
 
@@ -43,11 +43,14 @@ def enrich_items(
         should_fetch_for_summary = fetched_by_stream.get(stream, 0) < fetch_budget.get(stream, 0)
         should_validate = requires_original_validation(item)
         if should_fetch_for_summary or should_validate:
-            item.article_text = get_article_text(
+            result = get_article_text(
                 item.link,
                 article_cache,
                 refresh_empty=should_validate,
             )
+            item.article_text = result.text
+            item.article_quality_status = result.status
+            item.article_quality_note = result.note
             if should_fetch_for_summary:
                 fetched_by_stream[stream] = fetched_by_stream.get(stream, 0) + 1
         if is_unreadable_original(item):
@@ -82,20 +85,29 @@ def get_article_text(
     url: str,
     article_cache: dict[str, object] | None,
     refresh_empty: bool = False,
-) -> str:
+) -> ArticleTextResult:
     if article_cache is not None:
         cached = article_cache.get(url)
-        if isinstance(cached, str) and (cached or not refresh_empty):
-            return cached
+        if isinstance(cached, dict):
+            text = str(cached.get("text", ""))
+            status = str(cached.get("status", "ok"))
+            if status not in {"low_quality", "unavailable"} and (text or not refresh_empty):
+                return ArticleTextResult(
+                    text,
+                    status,
+                    str(cached.get("note", "reused cached article text")),
+                )
+        if isinstance(cached, str) and cached == ARCHIVED_ARTICLE_MARKER:
+            return ArticleTextResult(cached, "unavailable", "reused archived-article marker")
     try:
-        text = fetch_article_text(url)
+        result = fetch_article_result(url)
     except ArchivedArticleError:
-        text = ARCHIVED_ARTICLE_MARKER
+        result = ArticleTextResult(ARCHIVED_ARTICLE_MARKER, "unavailable", "source page is archived or unavailable")
     except Exception:
-        text = ""
-    if article_cache is not None:
-        article_cache[url] = text
-    return text
+        result = ArticleTextResult("", "low_quality", "article fetch failed or returned no readable text")
+    if article_cache is not None and result.status not in {"low_quality", "unavailable"}:
+        article_cache[url] = {"text": result.text, "status": result.status, "note": result.note}
+    return result
 
 
 def requires_original_validation(item: DigestItem) -> bool:

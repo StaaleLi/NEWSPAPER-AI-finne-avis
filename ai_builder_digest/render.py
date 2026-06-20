@@ -289,4 +289,15 @@ def render_audit_card(audit: SourceAudit) -> str:
         notes.append("今天有更新，但没有内容符合当前筛选主题。")
     notes_html = '<ul class="notes">' + "".join(f"<li>{html.escape(note)}</li>" for note in dict.fromkeys(notes)) + "</ul>" if notes else ""
     status_class = "status-ok" if audit.status == "ok" else "status-failed"
-    return f'<div class="audit-card"><strong>{html.escape(audit.name)}</strong><div class="{status_class}">{html.escape(audit.status)}</div><div class="audit-line">抓取：{audit.total_fetched} · 今日：{audit.today_count} · 入选：{audit.selected_count}</div><div class="audit-line">{html.escape(audit.region)} · <a href="{html.escape(display_source_url(audit.url))}" target="_blank" rel="noopener noreferrer">打开来源页</a></div>{notes_html}</div>'
+    freshness = {
+        "current": "含当日条目",
+        "recent": "仅近 1 日条目",
+        "stale": "未发现近期条目",
+        "unknown": "无法逐条确认日期",
+        "empty": "未抓到条目",
+    }.get(audit.freshness_status, "日期状态未知")
+    latest = f" · 最新：{html.escape(audit.newest_published)}" if audit.newest_published else ""
+    body_quality = ""
+    if audit.article_checked_count:
+        body_quality = f'<div class="audit-line">正文审查：{audit.article_checked_count} 篇 · 清理模板：{audit.article_cleaned_count} · 回退：{audit.article_fallback_count}</div>'
+    return f'<div class="audit-card"><strong>{html.escape(audit.name)}</strong><div class="{status_class}">{html.escape(audit.status)} · {freshness}</div><div class="audit-line">抓取：{audit.total_fetched} · 当日：{audit.today_count} · 已识别日期：{audit.dated_count} · 入选：{audit.selected_count}{latest}</div>{body_quality}<div class="audit-line">{html.escape(audit.region)} · <a href="{html.escape(display_source_url(audit.url))}" target="_blank" rel="noopener noreferrer">打开来源页</a></div>{notes_html}</div>'
