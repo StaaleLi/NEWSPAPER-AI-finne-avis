@@ -26,6 +26,8 @@ class DigestItem:
     score: int = 0
     reason: str = ""
     article_text: str = ""
+    article_quality_status: str = "not_checked"
+    article_quality_note: str = ""
     chinese_title: str = ""
     brief: str = ""
     importance: str = ""
@@ -57,6 +59,8 @@ class DigestItem:
             "reason": self.reason,
             "article_excerpt": (self.brief or self.summary or self.article_text)[:240],
             "article_text_chars": len(self.article_text),
+            "article_quality_status": self.article_quality_status,
+            "article_quality_note": self.article_quality_note,
             "chinese_title": self.chinese_title,
             "brief": self.brief,
             "importance": self.importance,
@@ -84,6 +88,13 @@ class SourceAudit:
     total_fetched: int = 0
     today_count: int = 0
     selected_count: int = 0
+    dated_count: int = 0
+    newest_published: str = ""
+    freshness_status: str = "unknown"
+    fallback_selected_count: int = 0
+    article_checked_count: int = 0
+    article_cleaned_count: int = 0
+    article_fallback_count: int = 0
     error: str = ""
     notes: list[str] = field(default_factory=list)
 
@@ -96,6 +107,13 @@ class SourceAudit:
             "total_fetched": self.total_fetched,
             "today_count": self.today_count,
             "selected_count": self.selected_count,
+            "dated_count": self.dated_count,
+            "newest_published": self.newest_published,
+            "freshness_status": self.freshness_status,
+            "fallback_selected_count": self.fallback_selected_count,
+            "article_checked_count": self.article_checked_count,
+            "article_cleaned_count": self.article_cleaned_count,
+            "article_fallback_count": self.article_fallback_count,
             "error": self.error,
             "notes": self.notes,
         }

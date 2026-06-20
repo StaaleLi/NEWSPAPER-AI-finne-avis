@@ -3,8 +3,8 @@ from datetime import date, datetime
 from pathlib import Path
 import sqlite3
 
-from ai_builder_digest.cli import cache_is_fresh, effective_date_window_days, is_outside_date_window, is_too_old
-from ai_builder_digest.article import ArchivedArticleError, fetch_article_text
+from ai_builder_digest.cli import cache_is_fresh, effective_date_window_days, is_outside_date_window, is_too_old, parse_date
+from ai_builder_digest.article import ArticleTextResult, ArchivedArticleError, extract_article_text_result, fetch_article_text
 from ai_builder_digest.enrich import ARCHIVED_ARTICLE_MARKER, enrich_item, enrich_items
 from ai_builder_digest.fetchers import (
     extract_date_from_url,
@@ -252,6 +252,44 @@ def test_extract_date_returns_empty_for_no_match() -> None:
     assert extract_date_from_url("https://example.com/news/no-date-here/story.html") == ""
 
 
+def test_article_extraction_prefers_content_container_and_cleans_repeated_template() -> None:
+    content = """
+    <html><head><meta name="description" content="备用摘要，不应优先使用。"></head><body>
+      <p>页面导航内容，不应成为正文。</p>
+      <div class="article-content">
+        <p>新闻摘要新闻摘要新闻摘要新闻摘要12月20日，2026环球时报年会在北京举行，与会者围绕国际安全和全球治理展开讨论。</p>
+        <p>会议还讨论了国际合作与多边机制，为后续政策观察提供了公开信息。</p>
+      </div>
+    </body></html>
+    """
+
+    result = extract_article_text_result(content)
+
+    assert result.status == "cleaned"
+    assert "新闻摘要新闻摘要" not in result.text
+    assert result.text.startswith("12月20日")
+    assert "页面导航内容" not in result.text
+
+
+def test_article_extraction_falls_back_to_metadata_when_body_is_low_quality() -> None:
+    content = """
+    <html><head><meta name="description" content="这是可用的页面摘要，说明会议围绕国际合作、全球治理和安全议题展开讨论。"></head>
+    <body><div class="article-content"><p>新闻摘要新闻摘要新闻摘要</p></div></body></html>
+    """
+
+    result = extract_article_text_result(content)
+
+    assert result.status == "fallback"
+    assert result.text.startswith("这是可用的页面摘要")
+
+
+def test_rss_date_is_converted_to_source_local_timezone() -> None:
+    parsed = parse_date("Wed, 10 Jun 2026 22:30:00 GMT", "NO")
+
+    assert parsed is not None
+    assert parsed.date() == date(2026, 6, 11)
+
+
 def test_huanqiu_hidden_parser_can_fall_back_to_anchor_parser() -> None:
     source = Source("示例源", "https://example.org/", "html", "国际时政")
     html = '<html><body><a href="https://example.org/news/20260610/story.html">国际政策新闻</a></body></html>'
@@ -302,11 +340,11 @@ def test_enrich_items_refetches_empty_cached_xinhua_validation(monkeypatch) -> N
     )
     calls = {"count": 0}
 
-    def fake_fetch_article_text(url: str) -> str:
+    def fake_fetch_article_result(url: str) -> ArticleTextResult:
         calls["count"] += 1
         raise ArchivedArticleError("archived")
 
-    monkeypatch.setattr("ai_builder_digest.enrich.fetch_article_text", fake_fetch_article_text)
+    monkeypatch.setattr("ai_builder_digest.enrich.fetch_article_result", fake_fetch_article_result)
 
     result = enrich_items([item], date(2026, 6, 12), {item.link: ""}, max_article_fetches=0)
 
@@ -323,11 +361,38 @@ def test_enrich_items_drops_unreadable_xinhua_article(monkeypatch) -> None:
         published="2026-06-12",
     )
 
-    monkeypatch.setattr("ai_builder_digest.enrich.fetch_article_text", lambda url: "")
+    monkeypatch.setattr(
+        "ai_builder_digest.enrich.fetch_article_result",
+        lambda url: ArticleTextResult("", "low_quality", "test empty body"),
+    )
 
     result = enrich_items([item], date(2026, 6, 12), {item.link: ""}, max_article_fetches=0)
 
     assert result == []
+
+
+def test_legacy_article_cache_is_refreshed_with_quality_metadata(monkeypatch) -> None:
+    item = DigestItem(
+        title="国际会议讨论全球治理",
+        link="https://world.huanqiu.com/article/example",
+        source="环球网-国际",
+        category="国际时政",
+        published="2026-06-12",
+    )
+    cache: dict[str, object] = {item.link: "新闻摘要新闻摘要新闻摘要"}
+    calls = {"count": 0}
+
+    def fake_fetch_article_result(url: str) -> ArticleTextResult:
+        calls["count"] += 1
+        return ArticleTextResult("这是一段清理后的可读正文，用于验证旧缓存会在升级后重新抓取并写入质量状态。", "cleaned", "removed repeated template text")
+
+    monkeypatch.setattr("ai_builder_digest.enrich.fetch_article_result", fake_fetch_article_result)
+
+    result = enrich_items([item], date(2026, 6, 12), cache, max_article_fetches=1)
+
+    assert result[0].article_quality_status == "cleaned"
+    assert calls["count"] == 1
+    assert isinstance(cache[item.link], dict)
 
 
 def test_ai_does_not_match_inside_english_word() -> None:

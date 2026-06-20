@@ -5,6 +5,7 @@ import json
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .classifier import classify_item
 from .enrich import enrich_items
@@ -46,37 +47,43 @@ def build_digest(
         if used_cache:
             audit.notes.append("used cached source response")
         audit.total_fetched = len(raw_items)
-        audit.today_count = count_items_on_date(raw_items, target_date)
-        dated_count = count_dated_items(raw_items)
+        audit.today_count = count_items_on_date(raw_items, target_date, source.region)
+        audit.dated_count = count_dated_items(raw_items, source.region)
+        audit.newest_published = newest_item_date(raw_items, source.region)
+        audit.freshness_status = determine_freshness(audit, target_date)
+        dated_count = audit.dated_count
         if source.source_type == "html" and dated_count == 0:
             audit.notes.append("html channel has no reliable per-item date; today coverage cannot be proven")
         elif source.source_type == "html" and dated_count < len(raw_items):
             audit.notes.append("some html items have no reliable date; daily completeness is partial")
-        elif audit.today_count == 0:
-            audit.notes.append(f"no items dated {target_date.isoformat()}; check source freshness")
 
         source_selected = 0
+        fallback_selected = 0
         source_date_window_days = effective_date_window_days(source, date_window_days)
         for item in raw_items:
             if not is_probable_news_link(item.link, source.url):
                 continue
-            if is_too_old(item.published, max_age_days):
+            if is_too_old(item.published, max_age_days, source.region):
                 continue
-            if is_outside_date_window(item.published, target_date, source_date_window_days):
+            if is_outside_date_window(item.published, target_date, source_date_window_days, source.region):
                 continue
             classified = classify_item(item)
             if classified:
                 selected.append(classified)
                 source_selected += 1
+                item_date = parse_date(item.published, source.region)
+                if item_date and item_date.date() != target_date:
+                    fallback_selected += 1
         audit.selected_count = source_selected
+        audit.fallback_selected_count = fallback_selected
         if source_selected and source_date_window_days > date_window_days and audit.today_count == 0:
             audit.notes.append(
                 f"used readable recent items within {source_date_window_days} day(s) because no target-date items were found"
             )
         if source.region == "CN":
-            audit.notes.extend(china_coverage_notes(source.category, raw_items, source_selected, target_date))
+            audit.notes.extend(china_coverage_notes(source.category, raw_items, source_selected, target_date, source.region))
         if source.region == "NO":
-            audit.notes.extend(norway_coverage_notes(raw_items, source_selected, target_date))
+            audit.notes.extend(norway_coverage_notes(raw_items, source_selected, target_date, source.region))
         audits.append(audit)
     return dedupe_and_sort(selected)[:max_items], audits
 
@@ -138,6 +145,8 @@ def item_from_dict(value: dict[str, object]) -> DigestItem:
     item.score = int(value.get("score", 0)) if isinstance(value.get("score", 0), int) else 0
     item.reason = str(value.get("reason", ""))
     item.article_text = str(value.get("article_text", ""))
+    item.article_quality_status = str(value.get("article_quality_status", "not_checked"))
+    item.article_quality_note = str(value.get("article_quality_note", ""))
     item.chinese_title = str(value.get("chinese_title", ""))
     item.brief = str(value.get("brief", ""))
     item.importance = str(value.get("importance", ""))
@@ -156,68 +165,89 @@ def item_from_dict(value: dict[str, object]) -> DigestItem:
     return item
 
 
-def count_items_on_date(items: list[DigestItem], target_date: date) -> int:
+def count_items_on_date(items: list[DigestItem], target_date: date, region: str = "") -> int:
     count = 0
     for item in items:
-        parsed = parse_date(item.published)
+        parsed = parse_date(item.published, region)
         if parsed and parsed.date() == target_date:
             count += 1
     return count
 
 
-def count_dated_items(items: list[DigestItem]) -> int:
-    return sum(1 for item in items if parse_date(item.published) is not None)
+def count_dated_items(items: list[DigestItem], region: str = "") -> int:
+    return sum(1 for item in items if parse_date(item.published, region) is not None)
+
+
+def newest_item_date(items: list[DigestItem], region: str = "") -> str:
+    dates = [parsed.date() for item in items if (parsed := parse_date(item.published, region))]
+    return max(dates).isoformat() if dates else ""
+
+
+def determine_freshness(audit: SourceAudit, target_date: date) -> str:
+    if audit.total_fetched == 0:
+        return "empty"
+    if audit.dated_count == 0:
+        return "unknown"
+    if audit.today_count > 0:
+        return "current"
+    if audit.newest_published:
+        newest = date.fromisoformat(audit.newest_published)
+        if newest == target_date - timedelta(days=1):
+            return "recent"
+    return "stale"
 
 
 def china_coverage_notes(
-    category: str, raw_items: list[DigestItem], selected_count: int, target_date: date
+    category: str, raw_items: list[DigestItem], selected_count: int, target_date: date, region: str = ""
 ) -> list[str]:
     notes: list[str] = []
     if category in {"国内时政", "国际时政", "AI产业"} and not raw_items:
         notes.append(f"required China channel {category} returned no items")
     if category in {"国内时政", "国际时政", "AI产业"} and selected_count == 0:
         notes.append(f"no selected items for required China channel {category}; review keywords or source")
-    if any(parse_date(item.published) is not None for item in raw_items) and count_items_on_date(raw_items, target_date) == 0:
-        notes.append(f"required China channel has no item dated {target_date.isoformat()}")
     return notes
 
 
-def norway_coverage_notes(raw_items: list[DigestItem], selected_count: int, target_date: date) -> list[str]:
+def norway_coverage_notes(
+    raw_items: list[DigestItem], selected_count: int, target_date: date, region: str = ""
+) -> list[str]:
     notes: list[str] = []
     if not raw_items:
         notes.append("required Norway source returned no items")
-    if count_items_on_date(raw_items, target_date) == 0:
-        notes.append(f"required Norway source has no item dated {target_date.isoformat()}")
     if selected_count == 0:
         notes.append("no Norway/NATO/EØS items selected; inspect raw feed before assuming no news")
     return notes
 
 
-def is_too_old(published: str, max_age_days: int) -> bool:
+def is_too_old(published: str, max_age_days: int, region: str = "") -> bool:
     if not published:
         return False
-    parsed = parse_date(published)
+    parsed = parse_date(published, region)
     if parsed is None:
         return False
     return (datetime.now().date() - parsed.date()).days > max_age_days
 
 
-def is_outside_date_window(published: str, target_date: date, date_window_days: int) -> bool:
-    parsed = parse_date(published)
+def is_outside_date_window(published: str, target_date: date, date_window_days: int, region: str = "") -> bool:
+    parsed = parse_date(published, region)
     if parsed is None:
         return False
     return abs((parsed.date() - target_date).days) > date_window_days
 
 
-def parse_date(value: str) -> datetime | None:
+def parse_date(value: str, region: str = "") -> datetime | None:
     value = value.strip()
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
         try:
-            return datetime.strptime(value[:10], fmt)
+            return datetime.strptime(value[:19], fmt)
         except ValueError:
             pass
     try:
-        return parsedate_to_datetime(value).replace(tzinfo=None)
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            return parsed
+        timezone = ZoneInfo("Europe/Oslo") if region == "NO" else ZoneInfo("Asia/Shanghai")
+        return parsed.astimezone(timezone).replace(tzinfo=None)
     except (TypeError, ValueError):
         return None
 
@@ -233,6 +263,24 @@ def dedupe_and_sort(items: list[DigestItem]) -> list[DigestItem]:
         by_link.values(),
         key=lambda item: (stream_order.get(item.stream, 9), -item.score, item.source, item.title),
     )
+
+
+def record_article_quality(audits: list[SourceAudit], items: list[DigestItem]) -> None:
+    by_source = {audit.name: audit for audit in audits}
+    for item in items:
+        audit = by_source.get(item.source)
+        if audit is None or item.article_quality_status == "not_checked":
+            continue
+        audit.article_checked_count += 1
+        if item.article_quality_status == "cleaned":
+            audit.article_cleaned_count += 1
+        if item.article_quality_status in {"fallback", "low_quality", "unavailable"}:
+            audit.article_fallback_count += 1
+    for audit in audits:
+        if audit.article_cleaned_count:
+            audit.notes.append(f"cleaned repeated template text in {audit.article_cleaned_count} article body/bodies")
+        if audit.article_fallback_count:
+            audit.notes.append(f"{audit.article_fallback_count} selected article(s) used a metadata/title fallback after body-quality checks")
 
 
 def main() -> None:
@@ -275,6 +323,7 @@ def main() -> None:
         args.cache_ttl_minutes,
     )
     enrich_items(items, target_date, article_cache, args.max_article_fetches)
+    record_article_quality(audits, items)
     if args.use_llm:
         updated = llm_enrich_items(items, args.llm_max_items)
         if updated == 0:

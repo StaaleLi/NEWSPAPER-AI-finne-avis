@@ -25,10 +25,19 @@
 
 - `total_fetched`：这个来源抓到了多少条；
 - `today_count`：其中多少条能证明是目标日期；
+- `dated_count`：其中多少条具有可解析的发布日期；
+- `newest_published`：该来源本次抓到的最新发布日期；
+- `freshness_status`：区分“含当日条目”“仅近 1 日条目”“日期无法逐条确认”和“未发现近期条目”；
 - `selected_count`：最终入选多少条；
-- `notes`：来源失败、日期不匹配、HTML 日期不完整等风险提示。
+- `fallback_selected_count`：因来源当天无新条目而在允许窗口内保留的近期条目数；
+- `article_checked_count`、`article_cleaned_count`、`article_fallback_count`：原文正文检查、模板清理与摘要回退的数量；
+- `notes`：来源失败、日期不匹配、正文质量异常、HTML 日期不完整等风险提示。
 
 这种设计适合真实项目，因为新闻源经常变化。与其静默失败，不如把失败显示在网页和 `data/audit.json` 里。
+
+## Body Quality Checks
+
+网页正文不会被默认视为可信文本。程序会优先定位常见正文容器，去除重复的模板词（例如连续出现的“新闻摘要”），并去重重复段落。如果清理后仍没有足够长的正文，则回退使用页面 metadata 摘要；无法获得任何可读文本时，会记录为低质量结果。新华网归档页会直接剔除，避免把“内容已过期归档”当作新闻正文。
 
 ## Known Limitation
 
